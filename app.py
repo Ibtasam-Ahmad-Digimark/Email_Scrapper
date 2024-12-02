@@ -1,16 +1,38 @@
 import streamlit as st
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options
 import pandas as pd
 import os
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 import re
-import chromedriver_autoinstaller
 from urllib.parse import urljoin
+import shutil
+
+# Function to dynamically find the Geckodriver path
+def find_geckodriver_path():
+    # First, check if geckodriver is in the PATH environment variable
+    geckodriver_path = shutil.which("geckodriver")
+    if geckodriver_path:
+        return geckodriver_path
+    
+    # If not in PATH, you can specify other default locations
+    default_paths = [
+        "/usr/local/bin/geckodriver",  # Common location for Linux
+        "/usr/bin/geckodriver",        # Another common location
+        os.path.join(os.getcwd(), "geckodriver")  # Check if geckodriver is in current working directory
+    ]
+    
+    # Check if Geckodriver exists in any of the default paths
+    for path in default_paths:
+        if os.path.exists(path):
+            return path
+    
+    # If not found, raise an error
+    raise FileNotFoundError("Geckodriver not found in PATH or default locations.")
 
 # Functions for scraping emails and finding contact pages (unchanged from your original code)
 def scrape_emails_with_selenium(driver, url):
@@ -92,16 +114,24 @@ st.write("Upload a CSV file with a column 'Website' to extract emails from web p
 uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
 
 if uploaded_file is not None:
-    # Set up Selenium WebDriver
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run in headless mode
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    
-    chromedriver_autoinstaller.install()
+    # Dynamically find the Geckodriver path
+    try:
+        geckodriver_path = find_geckodriver_path()
+        st.write(f"Using Geckodriver located at: {geckodriver_path}")
+    except FileNotFoundError as e:
+        st.error(str(e))
+        st.stop()
 
-    driver = webdriver.Chrome(options=chrome_options)
+    # Set up Selenium WebDriver with Firefox
+    firefox_options = Options()
+    firefox_options.headless = True  # Run in headless mode
+    firefox_options.add_argument("--disable-gpu")
+    firefox_options.add_argument("--no-sandbox")
+    firefox_options.add_argument("--disable-dev-shm-usage")
+
+    # Initialize the Firefox WebDriver
+    service = Service(geckodriver_path)
+    driver = webdriver.Firefox(service=service, options=firefox_options)
 
     # Process the uploaded CSV
     with st.spinner('Processing CSV...'):
@@ -115,7 +145,6 @@ if uploaded_file is not None:
         st.dataframe(result_df)
 
         # Allow user to download the updated CSV
-        output_csv = f"extracted_emails_{uploaded_file.name}"
+        output_csv = f"{uploaded_file.name}_with_emails"
         result_df.to_csv(output_csv, index=False)
         st.download_button("Download Updated CSV", data=open(output_csv, 'rb'), file_name=output_csv)
-
